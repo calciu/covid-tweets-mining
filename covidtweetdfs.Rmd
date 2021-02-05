@@ -1,0 +1,66 @@
+---
+title: "Howto en français"
+author: "M. Calciu"
+date: "2/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Text Mining sur Tweets Covid 19
+Pour pouvoir appliquer les instructios qui se trouvent dans les fichiers de type Rmarkdown (Rmd) du Manuel " Text Mining with R: A Tidy Approach" il faudra copier le fichier qui resulte dans le dossier du clone github du manuel  
+## Adapter le fichier covidtweets pour le text mininig en anglais
+
+Le fichier peut être téléchargé de l'adresse suivante: <http://marketing.iae.univ-lille1.fr/Rweb/cases/corona/coronavirus-tweet-id-2020-1-5-samp100k.csv>
+
+Preparer un dossier data pour déposer les dataframes qui seron crées pour usage ultérieur
+
+````{bash}
+mkdir data
+```
+
+Lire le fichier de l'internet et enregistrer le dataframe dans le dossier data
+
+```{r}
+
+#library(stringr)
+library(readr)
+#covidtweetscsv<- read_delim(url("http://marketing.iae.univ-lille1.fr/Rweb/cases/corona/coronavirus-tweet-id-2020-1-5-samp100k.csv"), ",", escape_double = FALSE, trim_ws = TRUE)
+#save(covidtweetscsv, file = "./data/covidtweetscsv.rda")
+```
+
+Nous avons selectionné que les tweets contribués c'est à dire les tweets dont les tweet type était "original", "quote" ou "reply". Nous avons éliminé les retweets. Aussi il a fallu trier les tweets par ordre chronologique pour garder l'analogie avec les lignes des livres.
+
+```{r}
+library(dplyr)
+# library(lubridate)
+data(covidtweetscsv)
+
+Sys.setlocale("LC_TIME", "en_GB.UTF-8") # to be able to read create_at date string
+covidtweetseng <- covidtweetscsv %>%  
+  filter(tweet_type != "retweet", lang == "en") %>% 
+  select(id, created_at,user_screen_name,text, tweet_type) %>%
+  mutate(id = as.character(id)) %>%
+  mutate(month =as.numeric(format(strptime(created_at, "%A %B %d %H:%M:%S %z %Y"), "%m"))) %>%
+  mutate(created_at=strptime(created_at, "%A %B %d %H:%M:%S %z %Y")) %>%
+  arrange(created_at)
+         
+save(covidtweetseng, file = "./data/covidtweetseng.rda")
+
+covidtweetseng
+```
+
+
+Ce fichier va servir pour remplacer les analyses sur le livres issus des packages guttenberg et janeausteen
+Les elements que nous pourrions utiliser pour remplacer les tris par autheurs (authors), books (livres), chapter (chapitre) seront le mois (month), le type de tweet (tweet_type) et eventuellement user_screen_name. Mallheureusement ce dernier ne peut suffire pour representeer les autheurs de livre car en raison de l'échantillonage aucun des utilisateurs n'a produit plus de 10 tweets.
+Chaque tweet pourra representer un ligne de roman
+
+Le champ mois pourra remplacer les chapitre dans un roman
+
+Pour le retrouver aisément quand on utilise le manuel il faut copier le fichier qui resulte dans le dossier du clone github du manuel.
+
+```{bash}
+# git clone https://github.com/dgrtwo/tidy-text-mining
+cp ./data/covidtweetseng.rda ./tidy-text-mining/data/
+```

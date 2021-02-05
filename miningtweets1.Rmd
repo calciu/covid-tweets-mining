@@ -1,0 +1,106 @@
+---
+title: "Mining Tweets 1"
+author: "M. Calciu"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+# 1 Tidy text format  {#tidytext}
+This document tries to adapt the main examples from the book "Text Mining with R" to one dataset dealin with covid19tweets
+
+## 1.3 Tidying the Covid19 Tweets {#tidycovid} 
+
+
+```{r tidy_tweets}
+library(dplyr)
+library(tidytext)
+library(stringr) # to use str_detect & str_remove with regex patterns
+data("covidtweetseng")
+remove_reg <- "&amp;|&lt;|&gt;" 
+tidy_tweets <- covidtweetseng %>%
+  mutate(text = str_remove_all(text, remove_reg)) %>%
+  group_by(month) %>%
+  mutate(linenumber = row_number(),
+         chapter = month) %>%
+  ungroup() %>%
+  unnest_tokens(word, text, token="tweets") %>%
+  filter(!word %in% stop_words$word,
+         !word %in% str_remove_all(stop_words$word, "'"),
+         str_detect(word, "[a-z]"))
+
+tidy_tweets
+#save(tidy_tweets, file = "./data/tidy_tweets.rda")
+```
+
+We can also use dplyr’s count() to find the most common words in all the tweets (books) as a whole.
+
+# Word Frequencies
+```{r word_freq}
+word_freq <- tidy_tweets %>%
+  count(word, sort = T)
+word_freq
+```
+
+## 1.4 The gutenbergr package
+
+Word Frequencies by month (instead by author)
+
+```{r tweets_monthcnt}
+tweets_monthcnt <- tidy_tweets %>%
+  count(month, word)
+
+tweets_monthcnt
+```
+
+## 1.5 Wordfrequencies
+calculate the frequency for each word during three months by from February to April. We can use spread and gather from tidyr to reshape our dataframe so that it is just what we need for plotting and comparing the three months of tweets.
+
+```{r frequancy}
+library(tidyr)
+data("tidy_tweets")
+frequency <- tidy_tweets %>%
+  filter(month %in% 2:4) %>%
+  count(month, word) %>%
+  group_by(month) %>%
+  mutate(proportion = n / sum(n)) %>% 
+  select(-n) %>% 
+  spread(month, proportion) %>% 
+  gather(month, proportion, 3:4)
+frequency
+#save(frequency, file="./data/frequency.rda")
+```
+Now let's plot
+
+```{r plotcompare, dependson = "frequency", fig.width=10, fig.height=5, fig.cap="Comparing the word frequencies in tweets from February, March and April"}
+library(ggplot2)
+library(scales)
+
+# expect a warning about rows with missing values being removed
+ggplot(frequency, aes(x = proportion, y = `2`, 
+                      color = abs(`2` - proportion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), 
+                       low = "darkslategray4", high = "gray75") +
+  facet_wrap(~month, ncol = 2) +
+  theme(legend.position="none") +
+  labs(y = "February", x = NULL)
+```
+How correlated are the word frequencies in tweets between February and March, and between February and April?
+
+```{r cor_test, dependson = "frequency"}
+data("frequency")
+cor.test(data = frequency[frequency$month == "3",],
+         ~ proportion + `2`)
+cor.test(data = frequency[frequency$month == "4",], 
+         ~ proportion + `2`)
+```
+

@@ -1,0 +1,194 @@
+---
+title: "Mining Tweets 2"
+author: "M. Calciu"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+#  2 Sentiment analysis with tidy data
+We can use the tools of text mining to approach the emotional content of text programmatically, as shown in Figure \@ref(fig:tidyflow-ch2).
+
+```{r tidyflow-ch2, echo = FALSE, out.width = '100%', fig.cap = "A flowchart of a typical text analysis that uses tidytext for sentiment analysis. This chapter shows how to implement sentiment analysis using tidy data principles."}
+knitr::include_graphics("images/tmwr_0201.png")
+```
+
+One way to analyze the sentiment of a text is to consider the text as a combination of its individual words and the sentiment content of the whole text as the sum of the sentiment content of the individual words. This isn't the only way to approach sentiment analysis, but it is an often-used approach, *and* an approach that naturally takes advantage of the tidy tool ecosystem.
+
+## 2.1 The sentiments datasets
+```{r}
+library(tidytext)
+
+get_sentiments("afinn")
+```
+
+```{r}
+get_sentiments("bing")
+```
+
+
+
+## 2.2  Sentiment analysis with inner join
+
+What are the most common joy words in Covid19 tweets ? Let's use `count()` from dplyr.
+
+```{r}
+library(dplyr)
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+data("tidy_tweets")
+tidy_tweets %>%
+  filter(month == 2) %>%
+  inner_join(nrc_joy) %>%
+  count(word, sort = TRUE)
+```
+Next, we count up how many positive and negative words there are in defined sections of each book. We define an index here to keep track of where we are in the narrative; this index (using integer division) counts up sections of 80 lines of text.
+
+
+```{r tweetsentiment, dependson = "tidy_tweets"}
+library(dplyr)
+library(tidyr)
+
+tweet_sentiment <- tidy_tweets %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(month, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+tweet_sentiment
+```
+
+
+
+```{r sentimentplot, dependson = "tweetsentiment", fig.width=6, fig.height=7, fig.cap="Sentiment through the covid months"}
+library(ggplot2)
+
+ggplot(tweet_sentiment, aes(index, sentiment, fill = month)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~month, ncol = 2, scales = "free_x")
+```
+
+
+## 2.3 Comparing the three sentiment dictionaries
+
+Let’s use all three sentiment lexicons and examine how the sentiment changes across the months of tweets.
+
+
+```{r month_february, dependson = "tidy_tweets"}
+month_february <- tidy_tweets %>% 
+  filter(month == 2)
+
+month_february
+```
+
+Let’s again use integer division (%/%) to define larger sections of text that span multiple lines, and we can use the same pattern with count(), spread(), and mutate() to find the net sentiment in each of these sections of text.
+
+
+```{r comparesentiment, echo = FALSE, dependson = "month_february"}
+afinn <- month_february %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 80) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  month_february %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  month_february %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+```
+We now have an estimate of the net sentiment (positive - negative) in each chunk of the tweets text for each sentiment lexicon. Let's bind them together and visualize them in Figure \@ref(fig:compareplot).
+
+(ref:comparecap) Comparing three sentiment lexicons using *Covid19 February Tweets*
+
+```{r compareplot, dependson = "comparesentiment", fig.cap="(ref:comparecap)"}
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+
+
+Why is, for example, the result for the NRC lexicon biased so high in sentiment compared to the Bing et al. result? Let's look briefly at how many positive and negative words are in these lexicons.
+
+```{r}
+get_sentiments("nrc") %>% 
+  filter(sentiment %in% c("positive", "negative")) %>% 
+  count(sentiment)
+
+
+```
+
+
+
+```{r}
+get_sentiments("bing") %>% 
+  count(sentiment)
+```
+## 2.4 Most common positive and negative words
+
+
+```{r wordcounts, dependson = "tidy_tweets"}
+bing_word_counts <- tidy_tweets %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_word_counts
+```
+This can be shown visually, and we can pipe straight into ggplot2, if we like, because of the way we are consistently using tools built for handling tidy data frames.
+
+```{r pipetoplot, dependson = "wordcounts", fig.width=6, fig.height=3, fig.cap="Words that contribute to positive and negative sentiment in Jane Austen's novels"}
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+Lets us spot an anomaly in the sentiment analysis; the word "trump" is coded as positive because it has a positive meaning when playing cards but it is also the name of a president who has not always given a positive image.
+
+## 2.5 Wordclouds
+
+
+```{r firstwordcloud, dependson = "tidy_books", fig.height=7, fig.width=7, fig.cap="The most common words in Covid19 tweets"}
+library(wordcloud)
+
+tidy_tweets %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+```
+Let's do the sentiment analysis to tag positive and negative words using an inner join, then find the most common positive and negative words.
+
+
+```{r wordcloud, dependson = "tidy_books", fig.height=6, fig.width=6, fig.cap="Most common positive and negative words in Covid19 tweets"}
+library(reshape2)
+
+tidy_tweets %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100)
+```
+
+## 2.6 Looking at units beyond just words
+

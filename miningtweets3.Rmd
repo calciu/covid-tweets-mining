@@ -1,0 +1,145 @@
+---
+title: "Mining Tweets 3"
+author: "M. Calciu"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+#  3 Analyzing word and document frequency: tf-idf  {#tfidf}
+A central question in text mining and natural language processing is how to quantify what a document is about. 
+
+One measure of how important a word may be is its *term frequency* (tf), how frequently a word occurs in a document, as we examined in Chapter \@ref(tidytext). We might take the approach of adding a list of stop words and removing them before analysis.
+
+Another approach is to look at a term's *inverse document frequency* (idf), which decreases the weight for commonly used words and increases the weight for words that are not used very much in a collection of documents. This can be combined with term frequency to calculate a term's *tf-idf* (the two quantities multiplied together), the frequency of a term adjusted for how rarely it is used. 
+
+```{block, type = "rmdnote"}
+The statistic **tf-idf** is intended to measure how important a word is to a document in a collection (or corpus) of documents, for example, to one month in a collection of monthly Tweets or to one website in a collection of websites. 
+```
+
+## 3.1 Term frequency in monthly Covid19 tweets
+
+Let's start by looking at monthly Covid19 tweets and examine first term frequency, then tf-idf.
+
+
+```{r tweet_words, dependson="tidy_tweets"}
+library(dplyr)
+library(tidytext)
+
+data("tidy_tweets")
+tweet_words <- tidy_tweets %>%
+  count(month, word, sort = TRUE)
+
+total_words <- tweet_words %>% 
+  group_by(month) %>% 
+  summarize(total = sum(n))
+
+tweet_words <- left_join(tweet_words, total_words)
+
+tweet_words
+```
+
+let’s look at the distribution of n/total for each month of tweets, the number of times a word appears in a tweet month by the total number of terms (words) in that tweet month. This is exactly what term frequency is.
+
+
+```{r plottf, dependson = "tweet_words", fig.height=6, fig.width=6, fig.cap="Term frequency distribution in Covid19 Tweets"}
+library(ggplot2)
+
+ggplot(tweet_words, aes(n/total, fill = month)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~month, ncol = 2, scales = "free_y")
+```
+
+These plots exhibit similar distributions for all tweet months, with many words that occur rarely and fewer words that occur frequently.
+
+##  3.2 Zipf’s law 
+the relationship between the frequency that a word is used and its rank has been the subject of study; a classic version of this relationship is called Zipf's law, after George Zipf, a 20th century American linguist. 
+
+```{block, type = "rmdnote"}
+Zipf's law states that the frequency that a word appears is inversely proportional to its rank. 
+```
+
+We can examine Zipf's law for monthly Covid19 Tweets with just a few lines of dplyr functions.
+
+```{r freq_by_rank, dependson = tweet_words}
+freq_by_rank <- tweet_words %>% 
+  group_by(month) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total) %>%
+  ungroup()
+
+freq_by_rank
+```
+
+The `rank` column here tells us the rank of each word within the frequency table; the table was already ordered by `n` so we could use `row_number()` to find the rank. Then, we can calculate the term frequency in the same way we did before. Zipf's law is often visualized by plotting rank on the x-axis and term frequency on the y-axis, on logarithmic scales. Plotting this way, an inversely proportional relationship will have a constant, negative slope.
+
+```{r zipf, dependson = "freq_by_rank", fig.width=5, fig.height=4.5, fig.cap="Zipf's law for Covid19 Tweets"}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = month)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+Notice that Figure \@ref(fig:zipf) is in log-log coordinates. We see that all five monthy Tweets in our Tweets collection are similar to each other, and that the relationship between rank and frequency does have negative slope.
+
+```{r lower_rank, dependson = "freq_by_rank"}
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 1000,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+```
+
+Classic versions of Zipf's law have
+
+$$\text{frequency} \propto \frac{1}{\text{rank}}$$
+
+we have in fact gotten a slope that is relatively close to -1 here. Let's plot this fitted power law with the data in Figure \@ref(fig:zipffit) to see how it looks.
+
+```{r zipffit, dependson = "freq_by_rank", fig.width=5, fig.height=4.5, fig.cap="Fitting an exponent for Zipf's law with monthly Covid19 Tweets"}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = month)) + 
+  geom_abline(intercept = -1.7227, slope = -0.6865, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+## 3.3 The bind_tf_idf() function 
+
+The `bind_tf_idf()` function in the tidytext package takes a tidy text dataset as input with one row per token (term), per document. One column (`word` here) contains the terms/tokens, one column contains the documents (`month` in this case), and the last necessary column contains the counts, how many times each document contains each term (`n` in this example).
+
+```{r tf_idf, dependson = "tweet_words"}
+tweet_tf_idf <- tweet_words %>%
+  bind_tf_idf(word, month, n)
+
+tweet_tf_idf
+```
+
+Let's look at terms with high tf-idf in Covid19 Tweets.
+
+```{r desc_idf, dependson = "tf_idf"}
+tweet_tf_idf %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r plotseparate, dependson = "plottf", fig.height=8, fig.width=6, fig.cap="Highest tf-idf words in each month of Covid Tweets"}
+library(forcats)
+
+tweet_tf_idf %>%
+  group_by(month) %>%
+  slice_max(tf_idf, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = month)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~month, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+```
+
