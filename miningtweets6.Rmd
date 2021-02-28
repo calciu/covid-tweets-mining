@@ -1,0 +1,178 @@
+# Topic modeling {#topicmodeling}
+
+In text mining, we often have collections of documents, such as blog posts or news articles, that we'd like to divide into natural groups so that we can understand them separately. Topic modeling is a method for unsupervised classification of such documents, similar to clustering on numeric data, which finds natural groups of items even when we're not sure what we're looking for.
+
+Latent Dirichlet allocation (LDA) is a particularly popular method for fitting a topic model. It treats each document as a mixture of topics, and each topic as a mixture of words. This allows documents to "overlap" each other in terms of content, rather than being separated into discrete groups, in a way that mirrors typical use of natural language.
+
+```{r tidyflowchartch6, echo = FALSE, out.width = '100%', fig.cap = "A flowchart of a text analysis that incorporates topic modeling. The topicmodels package takes a Document-Term Matrix as input and produces a model that can be tided by tidytext, such that it can be manipulated and visualized with dplyr and ggplot2."}
+knitr::include_graphics("images/tmwr_0601.png")
+```
+
+As Figure \@ref(fig:tidyflowchartch6) shows, we can use tidy text principles to approach topic modeling with the same set of tidy tools we've used throughout this book. In this chapter, we'll learn to work with `LDA` objects from the [topicmodels package](https://cran.r-project.org/package=topicmodels), particularly tidying such models so that they can be manipulated with ggplot2 and dplyr. We'll also explore an example of clustering chapters from several books, where we can see that a topic model "learns" to tell the difference between the four books based on the text content.
+
+## Latent Dirichlet allocation
+
+Latent Dirichlet allocation is one of the most common algorithms for topic modeling. Without diving into the math behind the model, we can understand it as being guided by two principles.
+
+* **Every document is a mixture of topics.** We imagine that each document may contain words from several topics in particular proportions. For example, in a two-topic model we could say "Document 1 is 90% topic A and 10% topic B, while Document 2 is 30% topic A and 70% topic B."
+* **Every topic is a mixture of words.** For example, we could imagine a two-topic model of American news, with one topic for "politics" and one for "entertainment." The most common words in the politics topic might be "President", "Congress", and "government", while the entertainment topic may be made up of words such as "movies", "television", and "actor". Importantly, words can be shared between topics; a word like "budget" might appear in both equally.
+
+LDA is a mathematical method for estimating both of these at the same time: finding the mixture of words that is associated with each topic, while also determining the mixture of topics that describes each document. There are a number of existing implementations of this algorithm, and we'll explore one of them in depth.
+
+
+## Nettoyage des données avec quanteda
+Le fichier df_nrc.rds a huit colonnes de trop qui sont des doublons. Le texte des tweets est extrait dans un objet temporaire afin d'être tokenisé et d'éliminer tous les tokens qui nuisent à la clareté du contenu avec des options de filtrage du package quanteda. Les tokens nétoyés dans "foo" sont ensuite reconstitués en tweets grace aux identifiants dans "foo1" pour remplacer le text initiale des tweets par la version netoyée. 
+
+
+```{r tweets_dtm}
+library(quanteda)
+library(dplyr)
+library(tidytext)
+data("covidtweetseng")
+#lecture de l'ensemble de nos tweets
+obj<-covidtweetseng$text
+foo<-tokens(obj, remove_punct = TRUE,
+  remove_symbols = TRUE,
+  remove_numbers = TRUE,
+  remove_url = TRUE,
+  remove_separators = TRUE,
+  split_hyphens = FALSE,
+  padding = FALSE) %>%
+  tokens_remove(pattern = c("*.tt", "*.uk", "*.com", "rt", "#*", "@*","amp", "RT")) %>%
+  tokens_select(pattern="<U+.*",  selection = "remove", valuetype = "regex")%>%
+  tokens_tolower() 
+
+foo1<-data.frame(
+  id = seq_along(foo),
+  text = sapply(foo, paste, collapse = " "),
+  row.names = NULL
+)
+
+covidtweetseng$text <- foo1$text
+rm(list=c("foo","foo1"))
+```
+
+
+## Preparation des donnée en format tidy
+
+Pour préparer l'analyse LDA les données sont passée en format tidy tout en éliminant encore quelques stop_words etc.
+
+```{r}
+library(stringr) # to use str_detect & str_remove with regex patterns
+remove_reg <- "&amp;|&lt;|&gt;" 
+tidy_tweets <- covidtweetseng %>% select(id,user_screen_name,text,tweet_type) %>%
+  mutate(text = str_remove_all(text, remove_reg)) %>%
+  unnest_tokens(word, text, token="tweets") %>%
+  filter(!word %in% stop_words$word,
+         !word %in% str_remove_all(stop_words$word, "'"),
+         str_detect(word, "[a-z]"))
+```
+
+
+```{r}
+
+tweets_monthcnt <- tidy_tweets %>%
+  count(user_screen_name, word) 
+ 
+tweets_dtm <- tweets_monthcnt %>%
+  cast_dtm(user_screen_name, word, n)
+tweets_dtm
+```
+
+We can use the `LDA()` function from the topicmodels package, setting `k = 2`, to create a two-topic LDA model.
+
+```{block, type = "rmdnote"}
+Almost any topic model in practice will use a larger `k`, but we will soon see that this analysis approach extends to a larger number of topics.
+```
+
+This function returns an object containing the full details of the model fit, such as how words are associated with topics and how topics are associated with documents.
+
+```{r tw_lda}
+library(topicmodels)
+# set a seed so that the output of the model is predictable
+tw_lda <- LDA(tweets_dtm, k = 2, control = list(seed = 1234))
+tw_lda
+```
+
+Fitting the model was the "easy part": the rest of the analysis will involve exploring and interpreting the model using tidying functions from the tidytext package.
+
+### Word-topic probabilities
+
+In Chapter \@ref(dtm) we introduced the `tidy()` method, originally from the broom package [@R-broom], for tidying model objects. The tidytext package provides this method for extracting the per-topic-per-word probabilities, called $\beta$ ("beta"), from the model.
+
+```{r tw_topics}
+library(tidytext)
+
+tw_topics <- tidy(tw_lda, matrix = "beta")
+tw_topics
+```
+
+Notice that this has turned the model into a one-topic-per-term-per-row format. For each combination, the model computes the probability of that term being generated from that topic. For example, the term "aaron" has a $`r tw_topics$beta[1]`$ probability of being generated from topic 1, but a $`r tw_topics$beta[2]`$ probability of being generated from topic 2.
+
+We could use dplyr's `top_n()` to find the 10 terms that are most common within each topic. As a tidy data frame, this lends itself well to a ggplot2 visualization (Figure \@ref(fig:aptoptermsplot)).
+
+```{r aptoptermsplot, dependson = "ap_topics", fig.height=4, fig.width=7, fig.cap = "The terms that are most common within each topic"}
+library(ggplot2)
+library(dplyr)
+
+tw_top_terms <- tw_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tw_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+
+This visualization lets us understand the two topics that were extracted from the articles. The most common words in topic 1 include ..(international) .. , which suggests it may represent business or financial news. Those most common in topic 2 include ..(home) .., suggesting that this topic represents political news. One important observation about the words in each topic is that some words, such as "new" and "people", are common within both topics. This is an advantage of topic modeling as opposed to "hard clustering" methods: topics used in natural language could have some overlap in terms of words.
+
+As an alternative, we could consider the terms that had the *greatest difference* in $\beta$ between topic 1 and topic 2. This can be estimated based on the log ratio of the two: $\log_2(\frac{\beta_2}{\beta_1})$ (a log ratio is useful because it makes the difference symmetrical: $\beta_2$ being twice as large leads to a log ratio of 1, while $\beta_1$ being twice as large results in -1). To constrain it to a set of especially relevant words, we can filter for relatively common words, such as those that have a $\beta$ greater than 1/1000 in at least one topic.
+
+```{r beta_spread}
+library(tidyr)
+
+beta_spread <- tw_topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread
+```
+
+The words with the greatest differences between the two topics are visualized in Figure \@ref(fig:topiccompare).
+
+(ref:topiccap) Words with the greatest difference in $\beta$ between topic 2 and topic 1
+
+```{r topiccompare, dependson = "beta_spread", fig.cap = "(ref:topiccap)", echo = FALSE}
+beta_spread %>%
+  group_by(direction = log_ratio > 0) %>%
+  top_n(10, abs(log_ratio)) %>%
+  ungroup() %>%
+  mutate(term = reorder(term, log_ratio)) %>%
+  ggplot(aes(log_ratio, term)) +
+  geom_col() +
+  labs(x = "Log2 ratio of beta in topic 2 / topic 1", y = NULL)
+```
+
+We can see that the words more common in topic 2 include .. more local and economic aspects . Topic 1 was more characterized by .. international and political aspects ... This helps confirm that the two topics the algorithm identified were political and financial news.
+
+### Document-topic probabilities
+
+Besides estimating each topic as a mixture of words, LDA also models each document as a mixture of topics. We can examine the per-document-per-topic probabilities, called $\gamma$ ("gamma"), with the `matrix = "gamma"` argument to `tidy()`.
+
+```{r ap_documents}
+tw_documents <- tidy(tw_lda, matrix = "gamma")
+tw_documents
+```
+
+Each of these values is an estimated proportion of words from that document that are generated from that topic. 
+
+## Summary
+
+This chapter introduces topic modeling for finding clusters of words that characterize a set of documents, and shows how the `tidy()` verb lets us explore and understand these models using dplyr and ggplot2. This is one of the advantages of the tidy approach to model exploration: the challenges of different output formats are handled by the tidying functions, and we can explore model results using a standard set of tools. In particular, we saw that topic modeling is able to separate and distinguish chapters from four separate books, and explored the limitations of the model by finding words and chapters that it assigned incorrectly.
