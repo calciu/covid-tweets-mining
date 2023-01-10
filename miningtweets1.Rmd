@@ -28,7 +28,7 @@ tidy_tweets <- covidtweetseng %>%
   mutate(linenumber = row_number(),
          chapter = month) %>%
   ungroup() %>%
-  unnest_tokens(word, text) %>%
+  unnest_tokens(word, text, token="tweets") %>% # tidytext 0.3.4 or earlier needed as after option token="tweets" becomes obsolete
   filter(!word %in% stop_words$word,
          !word %in% str_remove_all(stop_words$word, "'"),
          str_detect(word, "[a-z]"))
