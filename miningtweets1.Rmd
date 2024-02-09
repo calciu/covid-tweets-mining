@@ -28,7 +28,7 @@ tidy_tweets <- covidtweetseng %>%
   mutate(linenumber = row_number(),
          chapter = month) %>%
   ungroup() %>%
-  unnest_tokens(word, text, token="tweets") %>% # tidytext 0.3.4 or earlier needed as after option token="tweets" becomes obsolete
+  unnest_tokens(word, text) %>%
   filter(!word %in% stop_words$word,
          !word %in% str_remove_all(stop_words$word, "'"),
          str_detect(word, "[a-z]"))
@@ -48,6 +48,7 @@ word_freq
 
 ## 1.4 The gutenbergr package
 
+## 1.5 Wordfrequencies
 Word Frequencies by month (instead by author)
 
 ```{r tweets_monthcnt}
@@ -57,7 +58,7 @@ tweets_monthcnt <- tidy_tweets %>%
 tweets_monthcnt
 ```
 
-## 1.5 Wordfrequencies
+
 calculate the frequency for each word during three months by from February to April. We can use spread and gather from tidyr to reshape our dataframe so that it is just what we need for plotting and comparing the three months of tweets.
 
 ```{r frequancy}
@@ -65,15 +66,21 @@ library(tidyr)
 data("tidy_tweets")
 frequency <- tidy_tweets %>%
   filter(month %in% 2:4) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
   count(month, word) %>%
   group_by(month) %>%
   mutate(proportion = n / sum(n)) %>% 
   select(-n) %>% 
-  spread(month, proportion) %>% 
-  gather(month, proportion, 3:4)
+#  spread(month, proportion) %>% 
+pivot_wider(names_from = month, values_from = proportion)  %>%  #gather(month, proportion, 3:4)
+pivot_longer(3:4, names_to = "month", values_to = "proportion")
+
 frequency
 #save(frequency, file="./data/frequency.rda")
 ```
+
+We use str_extract() here because the UTF-8 encoded tweet texts have some examples of words with underscores around and other signs. The tokenizer treated these as words, but we don’t want to count “_any_” separately from “any” as we saw in our initial data exploration before choosing to use str_extract().
+
 Now let's plot
 
 ```{r plotcompare, dependson = "frequency", fig.width=10, fig.height=5, fig.cap="Comparing the word frequencies in tweets from February, March and April"}
@@ -103,4 +110,3 @@ cor.test(data = frequency[frequency$month == "3",],
 cor.test(data = frequency[frequency$month == "4",], 
          ~ proportion + `2`)
 ```
-
