@@ -29,6 +29,9 @@ get_sentiments("afinn")
 get_sentiments("bing")
 ```
 
+```{r}
+get_sentiments("nrc")
+```
 
 
 ## 2.2  Sentiment analysis with inner join
@@ -56,7 +59,8 @@ library(tidyr)
 tweet_sentiment <- tidy_tweets %>%
   inner_join(get_sentiments("bing")) %>%
   count(month, index = linenumber %/% 80, sentiment) %>%
-  spread(sentiment, n, fill = 0) %>%
+#  spread(sentiment, n, fill = 0) %>%
+pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
   mutate(sentiment = positive - negative)
 tweet_sentiment
 ```
@@ -84,7 +88,7 @@ month_february <- tidy_tweets %>%
 month_february
 ```
 
-Let’s again use integer division (%/%) to define larger sections of text that span multiple lines, and we can use the same pattern with count(), spread(), and mutate() to find the net sentiment in each of these sections of text.
+Let’s again use integer division (%/%) to define larger sections of text that span multiple lines, and we can use the same pattern with count(), pivot_wider(), and mutate() to find the net sentiment in each of these sections of text.
 
 
 ```{r comparesentiment, echo = FALSE, dependson = "month_february"}
@@ -154,7 +158,8 @@ This can be shown visually, and we can pipe straight into ggplot2, if we like, b
 ```{r pipetoplot, dependson = "wordcounts", fig.width=6, fig.height=3, fig.cap="Words that contribute to positive and negative sentiment in Jane Austen's novels"}
 bing_word_counts %>%
   group_by(sentiment) %>%
-  top_n(10) %>%
+  #top_n(10) %>%
+  slice_max(n, n = 10) %>%
   ungroup() %>%
   mutate(word = reorder(word, n)) %>%
   ggplot(aes(n, word, fill = sentiment)) +
