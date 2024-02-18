@@ -1,8 +1,10 @@
 ---
 title: "Mining Tweets 3"
 author: "M. Calciu"
-date: "2/4/2021"
-output: html_document
+date: "9/2/2024"
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -65,11 +67,12 @@ Zipf's law states that the frequency that a word appears is inversely proportion
 
 We can examine Zipf's law for monthly Covid19 Tweets with just a few lines of dplyr functions.
 
-```{r freq_by_rank, dependson = tweet_words}
+
+```{r dependson = "tweet_words"}
 freq_by_rank <- tweet_words %>% 
   group_by(month) %>% 
   mutate(rank = row_number(), 
-         `term frequency` = n/total) %>%
+         'term frequency' = n/total) %>%
   ungroup()
 
 freq_by_rank
@@ -111,6 +114,7 @@ freq_by_rank %>%
   scale_y_log10()
 ```
 
+
 ## 3.3 The bind_tf_idf() function 
 
 The `bind_tf_idf()` function in the tidytext package takes a tidy text dataset as input with one row per token (term), per document. One column (`word` here) contains the terms/tokens, one column contains the documents (`month` in this case), and the last necessary column contains the counts, how many times each document contains each term (`n` in this example).
@@ -121,6 +125,7 @@ tweet_tf_idf <- tweet_words %>%
 
 tweet_tf_idf
 ```
+
 
 Let's look at terms with high tf-idf in Covid19 Tweets.
 
@@ -142,4 +147,3 @@ tweet_tf_idf %>%
   facet_wrap(~month, ncol = 2, scales = "free") +
   labs(x = "tf-idf", y = NULL)
 ```
-
