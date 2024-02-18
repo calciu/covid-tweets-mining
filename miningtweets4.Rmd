@@ -81,7 +81,7 @@ tidy_tweets %>%
   count(word1, word2, word3, sort = TRUE)
 ```
 
-### Analyzing bigrams
+### 4.1.2 Analyzing bigrams
 
 This one-bigram-per-row format is helpful for exploratory analyses of the urls starting with https ..
 
@@ -115,7 +115,7 @@ bigram_tf_idf %>%
   facet_wrap(~ month, ncol = 2, scales = "free") +
   labs(x = "tf-idf of bigram", y = NULL)
 ```
-### Using bigrams to provide context in sentiment analysis
+### 4.1.3 Using bigrams to provide context in sentiment analysis
 Now that we have the data organized into bigrams, it's easy to tell how often words are preceded by a word like "not":
 
 ```{r dependson = "bigrams_separated"}
@@ -127,7 +127,7 @@ bigrams_separated %>%
 We can then examine the most frequent words that were preceded by "not" and were associated with a sentiment.
 ...
 
-### Visualizing a network of bigrams with ggraph
+### 4.1.4 Visualizing a network of bigrams with ggraph
 
 We may be interested in visualizing all of the relationships among words simultaneously, rather than just the top few at a time.
 
