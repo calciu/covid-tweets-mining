@@ -1,3 +1,15 @@
+---
+title: "Mining Tweets 6"
+author: "M. Calciu"
+date: "18/02/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
 # Topic modeling {#topicmodeling}
 
 In text mining, we often have collections of documents, such as blog posts or news articles, that we'd like to divide into natural groups so that we can understand them separately. Topic modeling is a method for unsupervised classification of such documents, similar to clustering on numeric data, which finds natural groups of items even when we're not sure what we're looking for.
@@ -62,7 +74,7 @@ library(stringr) # to use str_detect & str_remove with regex patterns
 remove_reg <- "&amp;|&lt;|&gt;" 
 tidy_tweets <- covidtweetseng %>% select(id,user_screen_name,text,tweet_type) %>%
   mutate(text = str_remove_all(text, remove_reg)) %>%
-  unnest_tokens(word, text, token="tweets") %>%
+  unnest_tokens(word, text) %>%
   filter(!word %in% stop_words$word,
          !word %in% str_remove_all(stop_words$word, "'"),
          str_detect(word, "[a-z]"))
@@ -71,10 +83,10 @@ tidy_tweets <- covidtweetseng %>% select(id,user_screen_name,text,tweet_type) %>
 
 ```{r}
 
-tweets_monthcnt <- tidy_tweets %>%
+tweets_cnt <- tidy_tweets %>%
   count(user_screen_name, word) 
  
-tweets_dtm <- tweets_monthcnt %>%
+tweets_dtm <- tweets_cnt %>%
   cast_dtm(user_screen_name, word, n)
 tweets_dtm
 ```
